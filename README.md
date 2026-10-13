@@ -1,6 +1,6 @@
 # Go 链上数据 Demo
 
-这是一个面向 EVM 兼容链的只读链上数据服务。它通过 `go-ethereum/ethclient` 连接 Ethereum JSON-RPC 节点，对外提供一组便于前端、脚本或业务服务调用的 HTTP API。
+这是一个面向 EVM 兼容链的只读链上数据服务。它通过 `go-ethereum/ethclient` 连接 Ethereum JSON-RPC 节点，对外提供 HTTP API，并内置了一套可视化链上数据控制台。
 
 ## 需要哪些外部 API？
 
@@ -70,6 +70,27 @@ go run ./cmd/server
 `.env.example` 是配置项清单；程序直接读取进程环境变量，不会自动加载 `.env` 文件。
 
 服务默认监听 `http://localhost:8080`。
+
+## Web 控制台
+
+启动服务后访问：
+
+```text
+http://localhost:8080/
+```
+
+控制台无需单独安装 Node.js 或执行前端构建，HTML、CSS 和 JavaScript 已通过 Go `embed` 打包进服务二进制。
+
+页面包含：
+
+- RPC 连接状态、Chain ID、最新区块与响应耗时；
+- 最新区块摘要和完整 JSON 检视；
+- 按高度查询区块；
+- 按交易哈希查询交易及 receipt；
+- 按地址和区块查询原生币余额；
+- 按合约地址、区块范围和 Topic 0 查询事件日志；
+- JSON 结果复制与浏览器本地查询历史；
+- 桌面端与移动端响应式布局。
 
 ## Demo HTTP API
 

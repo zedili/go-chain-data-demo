@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ChainScope EVM 链上数据控制台">
+  <title>ChainScope · 链上数据控制台</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="ChainScope 首页">
+        <span class="brand-mark" aria-hidden="true">CS</span>
+        <span><strong>ChainScope</strong><small>EVM DATA CONSOLE</small></span>
+      </a>
+
+      <nav class="nav" aria-label="主导航">
+        <a class="nav-link active" href="#overview"><span>01</span>网络概览</a>
+        <a class="nav-link" href="#block-query"><span>02</span>区块查询</a>
+        <a class="nav-link" href="#transaction-query"><span>03</span>交易查询</a>
+        <a class="nav-link" href="#balance-query"><span>04</span>余额查询</a>
+        <a class="nav-link" href="#logs-query"><span>05</span>事件日志</a>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="connection-state">
+          <span class="status-dot" id="sidebar-status-dot"></span>
+          <div><strong id="sidebar-status">正在连接</strong><small>RPC CONNECTION</small></div>
+        </div>
+        <p>只读控制台 · 不接触私钥</p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">ON-CHAIN OBSERVABILITY</p>
+          <h1>链上数据控制台</h1>
+        </div>
+        <div class="topbar-actions">
+          <span class="network-pill"><span class="status-dot"></span><span id="network-name">连接中</span></span>
+          <button class="icon-button" id="refresh-overview" type="button" title="刷新概览" aria-label="刷新概览">↻</button>
+        </div>
+      </header>
+
+      <section class="section" id="overview">
+        <div class="metric-grid">
+          <article class="metric-card accent-card">
+            <div class="metric-label">网络</div>
+            <div class="metric-value" id="metric-network">—</div>
+            <div class="metric-meta" id="metric-chain-id">Chain ID —</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">最新区块</div>
+            <div class="metric-value numeric" id="metric-height">—</div>
+            <div class="metric-meta" id="metric-block-time">等待同步</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">区块交易数</div>
+            <div class="metric-value numeric" id="metric-transactions">—</div>
+            <div class="metric-meta">最新区块内交易</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">RPC 响应</div>
+            <div class="metric-value numeric"><span id="metric-latency">—</span><small> ms</small></div>
+            <div class="metric-meta" id="metric-health">正在检查节点</div>
+          </article>
+        </div>
+
+        <div class="overview-grid">
+          <article class="panel block-spotlight">
+            <div class="panel-heading">
+              <div><p class="eyebrow">LATEST BLOCK</p><h2>最新区块快照</h2></div>
+              <button class="text-button" id="inspect-latest" type="button">查看完整数据 →</button>
+            </div>
+            <dl class="detail-list">
+              <div><dt>Block hash</dt><dd class="mono truncate" id="latest-hash">—</dd></div>
+              <div><dt>Parent hash</dt><dd class="mono truncate" id="latest-parent">—</dd></div>
+              <div><dt>Gas used</dt><dd class="mono" id="latest-gas">—</dd></div>
+              <div><dt>Base fee</dt><dd class="mono" id="latest-fee">—</dd></div>
+            </dl>
+          </article>
+
+          <article class="panel quick-start">
+            <div class="panel-heading"><div><p class="eyebrow">QUICK START</p><h2>快速开始</h2></div></div>
+            <div class="quick-list">
+              <a href="#block-query"><span class="quick-icon">#</span><span><strong>查询指定区块</strong><small>按十进制区块高度读取</small></span><b>→</b></a>
+              <a href="#transaction-query"><span class="quick-icon">TX</span><span><strong>追踪一笔交易</strong><small>查看发送方、Gas 和回执</small></span><b>→</b></a>
+              <a href="#logs-query"><span class="quick-icon">LG</span><span><strong>筛选合约事件</strong><small>按合约与 Topic 查询日志</small></span><b>→</b></a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section query-section" id="block-query">
+        <div class="section-heading"><div><p class="eyebrow">BLOCK EXPLORER</p><h2>区块查询</h2></div><span class="method-badge">GET</span></div>
+        <div class="panel query-card">
+          <form id="block-form" class="query-form">
+            <label class="field grow"><span>区块高度</span><input id="block-number" name="block" inputmode="numeric" placeholder="留空查询最新区块" autocomplete="off"></label>
+            <button class="primary-button" type="submit">查询区块</button>
+          </form>
+          <p class="form-hint">输入十进制区块高度，留空时读取最新区块。</p>
+        </div>
+      </section>
+
+      <section class="section query-section" id="transaction-query">
+        <div class="section-heading"><div><p class="eyebrow">TRANSACTION TRACE</p><h2>交易查询</h2></div><span class="method-badge">GET</span></div>
+        <div class="panel query-card">
+          <form id="transaction-form" class="query-form">
+            <label class="field grow"><span>交易哈希</span><input id="transaction-hash" name="hash" placeholder="0x…（64 位十六进制）" autocomplete="off" spellcheck="false"></label>
+            <button class="primary-button" type="submit">查询交易</button>
+          </form>
+          <p class="form-hint">返回交易字段、pending 状态以及链上回执。</p>
+        </div>
+      </section>
+
+      <section class="section query-section" id="balance-query">
+        <div class="section-heading"><div><p class="eyebrow">ACCOUNT STATE</p><h2>账户余额</h2></div><span class="method-badge">GET</span></div>
+        <div class="panel query-card">
+          <form id="balance-form" class="query-form two-fields">
+            <label class="field grow"><span>账户地址</span><input id="balance-address" name="address" placeholder="0x…（40 位十六进制）" autocomplete="off" spellcheck="false"></label>
+            <label class="field compact"><span>区块</span><input id="balance-block" name="block" placeholder="latest" autocomplete="off"></label>
+            <button class="primary-button" type="submit">查询余额</button>
+          </form>
+          <p class="form-hint">区块可填写 latest 或十进制高度，返回 Wei 与 Ether 两种单位。</p>
+        </div>
+      </section>
+
+      <section class="section query-section" id="logs-query">
+        <div class="section-heading"><div><p class="eyebrow">EVENT LOGS</p><h2>合约事件日志</h2></div><span class="method-badge">GET</span></div>
+        <div class="panel query-card">
+          <form id="logs-form" class="logs-form">
+            <label class="field wide"><span>合约地址</span><input id="logs-address" name="address" placeholder="0x…" autocomplete="off" spellcheck="false"></label>
+            <label class="field"><span>起始区块</span><input id="logs-from" name="fromBlock" inputmode="numeric" placeholder="例如 19000000" autocomplete="off"></label>
+            <label class="field"><span>结束区块</span><input id="logs-to" name="toBlock" inputmode="numeric" placeholder="最大跨度 5000" autocomplete="off"></label>
+            <label class="field wide"><span>Topic 0 <em>可选</em></span><input id="logs-topic" name="topic0" placeholder="事件签名哈希 0x…" autocomplete="off" spellcheck="false"></label>
+            <button class="primary-button" type="submit">查询日志</button>
+          </form>
+          <div class="form-footer">
+            <p class="form-hint">日志范围必须完整填写，Topic 0 可用于筛选特定事件。</p>
+            <button class="text-button" id="fill-transfer-topic" type="button">填入 Transfer Topic</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="section result-section" id="result-section">
+        <div class="section-heading">
+          <div><p class="eyebrow">RESPONSE INSPECTOR</p><h2 id="result-title">查询结果</h2></div>
+          <div class="result-actions"><span id="result-meta">等待查询</span><button class="secondary-button" id="copy-result" type="button" disabled>复制 JSON</button></div>
+        </div>
+        <div class="result-layout">
+          <div class="panel code-panel">
+            <div class="code-toolbar"><span><i></i>JSON RESPONSE</span><span id="result-endpoint">—</span></div>
+            <pre id="result-output" tabindex="0" aria-live="polite"><code>选择上方任一功能开始查询。</code></pre>
+          </div>
+          <aside class="panel history-panel">
+            <div class="panel-heading"><div><p class="eyebrow">LOCAL HISTORY</p><h2>最近查询</h2></div><button class="text-button" id="clear-history" type="button">清空</button></div>
+            <ol id="query-history" class="history-list"><li class="empty-history">暂无查询记录</li></ol>
+          </aside>
+        </div>
+      </section>
+
+      <footer><span>ChainScope / Go EVM Data Demo</span><span>READ-ONLY · JSON-RPC</span></footer>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

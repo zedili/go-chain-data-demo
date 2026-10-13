@@ -17,6 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+
+	"github.com/example/go-chain-data-demo/internal/webui"
 )
 
 type Config struct {
@@ -59,6 +61,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/transactions/{hash}", h.transactionByHash)
 	mux.HandleFunc("GET /api/v1/accounts/{address}/balance", h.balance)
 	mux.HandleFunc("GET /api/v1/logs", h.logs)
+	mux.Handle("GET /", webui.Handler())
 	return h.logging(mux)
 }
 
