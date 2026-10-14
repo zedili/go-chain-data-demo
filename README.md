@@ -2,6 +2,16 @@
 
 这是一个面向 EVM 兼容链的只读链上数据服务。它通过 `go-ethereum/ethclient` 连接 Ethereum JSON-RPC 节点，对外提供 HTTP API，并内置了一套可视化链上数据控制台。
 
+## 技术栈
+
+- Go 1.25+
+- Gin 1.12：HTTP 路由、路由分组、中间件和错误恢复
+- go-ethereum：EVM JSON-RPC 客户端和链上数据类型
+- Go `embed`：将 Web 控制台打包进服务二进制
+- `slog`：结构化访问日志
+
+HTTP 层使用 Gin，但 RPC 查询和数据转换逻辑保持为独立 Go 代码。后续增加数据库和 Indexer 时，业务层不会依赖 `gin.Context`，便于独立测试以及未来拆分服务。
+
 ## 需要哪些外部 API？
 
 ### 1. 必需：EVM JSON-RPC
@@ -44,7 +54,7 @@ HTTP Client
     |
     | GET /api/v1/...
     v
-Go net/http API
+Gin HTTP API
     |
     | go-ethereum ethclient
     v
@@ -64,6 +74,7 @@ PowerShell：
 
 ```powershell
 $env:RPC_URL = "https://你的节点地址/你的API_KEY"
+$env:GIN_MODE = "release"
 go run ./cmd/server
 ```
 

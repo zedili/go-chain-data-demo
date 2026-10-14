@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/gin-gonic/gin"
 
 	"github.com/example/go-chain-data-demo/internal/webui"
 )
@@ -53,88 +53,107 @@ func NewHandler(client *ethclient.Client, cfg Config) *Handler {
 }
 
 func (h *Handler) Routes() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", h.health)
-	mux.HandleFunc("GET /api/v1/network", h.network)
-	mux.HandleFunc("GET /api/v1/blocks/latest", h.latestBlock)
-	mux.HandleFunc("GET /api/v1/blocks/{number}", h.blockByNumber)
-	mux.HandleFunc("GET /api/v1/transactions/{hash}", h.transactionByHash)
-	mux.HandleFunc("GET /api/v1/accounts/{address}/balance", h.balance)
-	mux.HandleFunc("GET /api/v1/logs", h.logs)
-	mux.Handle("GET /", webui.Handler())
-	return h.logging(mux)
+	router := gin.New()
+	router.HandleMethodNotAllowed = true
+	_ = router.SetTrustedProxies(nil)
+	router.Use(h.logging(), gin.Recovery())
+
+	router.GET("/healthz", h.health)
+	api := router.Group("/api/v1")
+	api.GET("/network", h.network)
+	api.GET("/blocks/latest", h.latestBlock)
+	api.GET("/blocks/:number", h.blockByNumber)
+	api.GET("/transactions/:hash", h.transactionByHash)
+	api.GET("/accounts/:address/balance", h.balance)
+	api.GET("/logs", h.logs)
+
+	ui := gin.WrapH(webui.Handler())
+	router.GET("/", ui)
+	router.GET("/assets/*filepath", ui)
+	router.NoRoute(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			writeError(c, http.StatusNotFound, "route_not_found", "API route was not found")
+			return
+		}
+		ui(c)
+	})
+	router.NoMethod(func(c *gin.Context) {
+		writeError(c, http.StatusMethodNotAllowed, "method_not_allowed", "HTTP method is not allowed for this route")
+	})
+
+	return router
 }
 
-func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := h.rpcContext(r.Context())
+func (h *Handler) health(c *gin.Context) {
+	ctx, cancel := h.rpcContext(c.Request.Context())
 	defer cancel()
 	if _, err := h.client.BlockNumber(ctx); err != nil {
-		writeError(w, http.StatusServiceUnavailable, "rpc_unavailable", err.Error())
+		writeError(c, http.StatusServiceUnavailable, "rpc_unavailable", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(c, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *Handler) network(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := h.rpcContext(r.Context())
+func (h *Handler) network(c *gin.Context) {
+	ctx, cancel := h.rpcContext(c.Request.Context())
 	defer cancel()
 	chainID, err := h.client.ChainID(ctx)
 	if err != nil {
-		h.rpcError(w, err)
+		h.rpcError(c, err)
 		return
 	}
 	latest, err := h.client.BlockNumber(ctx)
 	if err != nil {
-		h.rpcError(w, err)
+		h.rpcError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(c, http.StatusOK, map[string]any{
 		"chainId":           chainID.String(),
 		"latestBlockNumber": latest,
 	})
 }
 
-func (h *Handler) latestBlock(w http.ResponseWriter, r *http.Request) {
-	h.writeBlock(w, r, nil)
+func (h *Handler) latestBlock(c *gin.Context) {
+	h.writeBlock(c, nil)
 }
 
-func (h *Handler) blockByNumber(w http.ResponseWriter, r *http.Request) {
-	number, err := strconv.ParseUint(r.PathValue("number"), 10, 64)
+func (h *Handler) blockByNumber(c *gin.Context) {
+	number, err := strconv.ParseUint(c.Param("number"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_block_number", "block number must be a decimal integer")
+		writeError(c, http.StatusBadRequest, "invalid_block_number", "block number must be a decimal integer")
 		return
 	}
-	h.writeBlock(w, r, new(big.Int).SetUint64(number))
+	h.writeBlock(c, new(big.Int).SetUint64(number))
 }
 
-func (h *Handler) writeBlock(w http.ResponseWriter, r *http.Request, number *big.Int) {
-	ctx, cancel := h.rpcContext(r.Context())
+func (h *Handler) writeBlock(c *gin.Context, number *big.Int) {
+	ctx, cancel := h.rpcContext(c.Request.Context())
 	defer cancel()
 	block, err := h.client.BlockByNumber(ctx, number)
 	if err != nil {
-		h.rpcError(w, err)
+		h.rpcError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, blockResponse(block))
+	writeJSON(c, http.StatusOK, blockResponse(block))
 }
 
-func (h *Handler) transactionByHash(w http.ResponseWriter, r *http.Request) {
-	rawHash := r.PathValue("hash")
+func (h *Handler) transactionByHash(c *gin.Context) {
+	rawHash := c.Param("hash")
 	if !isHash(rawHash) {
-		writeError(w, http.StatusBadRequest, "invalid_transaction_hash", "hash must be a 32-byte 0x-prefixed hex value")
+		writeError(c, http.StatusBadRequest, "invalid_transaction_hash", "hash must be a 32-byte 0x-prefixed hex value")
 		return
 	}
 
-	ctx, cancel := h.rpcContext(r.Context())
+	ctx, cancel := h.rpcContext(c.Request.Context())
 	defer cancel()
 	tx, pending, err := h.client.TransactionByHash(ctx, common.HexToHash(rawHash))
 	if err != nil {
-		h.rpcError(w, err)
+		h.rpcError(c, err)
 		return
 	}
 	chainID, err := h.client.ChainID(ctx)
 	if err != nil {
-		h.rpcError(w, err)
+		h.rpcError(c, err)
 		return
 	}
 
@@ -154,29 +173,29 @@ func (h *Handler) transactionByHash(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(c, http.StatusOK, response)
 }
 
-func (h *Handler) balance(w http.ResponseWriter, r *http.Request) {
-	rawAddress := r.PathValue("address")
+func (h *Handler) balance(c *gin.Context) {
+	rawAddress := c.Param("address")
 	if !common.IsHexAddress(rawAddress) {
-		writeError(w, http.StatusBadRequest, "invalid_address", "address must be a 20-byte hex address")
+		writeError(c, http.StatusBadRequest, "invalid_address", "address must be a 20-byte hex address")
 		return
 	}
 
-	blockNumber, err := parseOptionalBlockNumber(r.URL.Query().Get("block"))
+	blockNumber, err := parseOptionalBlockNumber(c.Query("block"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_block_number", err.Error())
+		writeError(c, http.StatusBadRequest, "invalid_block_number", err.Error())
 		return
 	}
-	ctx, cancel := h.rpcContext(r.Context())
+	ctx, cancel := h.rpcContext(c.Request.Context())
 	defer cancel()
 	wei, err := h.client.BalanceAt(ctx, common.HexToAddress(rawAddress), blockNumber)
 	if err != nil {
-		h.rpcError(w, err)
+		h.rpcError(c, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(c, http.StatusOK, map[string]any{
 		"address": common.HexToAddress(rawAddress).Hex(),
 		"block":   blockLabel(blockNumber),
 		"wei":     wei.String(),
@@ -184,25 +203,24 @@ func (h *Handler) balance(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	rawAddress := query.Get("address")
+func (h *Handler) logs(c *gin.Context) {
+	rawAddress := c.Query("address")
 	if !common.IsHexAddress(rawAddress) {
-		writeError(w, http.StatusBadRequest, "invalid_address", "address query parameter is required")
+		writeError(c, http.StatusBadRequest, "invalid_address", "address query parameter is required")
 		return
 	}
-	from, err := parseRequiredUint64(query.Get("fromBlock"), "fromBlock")
+	from, err := parseRequiredUint64(c.Query("fromBlock"), "fromBlock")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_block_range", err.Error())
+		writeError(c, http.StatusBadRequest, "invalid_block_range", err.Error())
 		return
 	}
-	to, err := parseRequiredUint64(query.Get("toBlock"), "toBlock")
+	to, err := parseRequiredUint64(c.Query("toBlock"), "toBlock")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_block_range", err.Error())
+		writeError(c, http.StatusBadRequest, "invalid_block_range", err.Error())
 		return
 	}
 	if to < from || to-from > h.maxLogBlockRange {
-		writeError(w, http.StatusBadRequest, "invalid_block_range", fmt.Sprintf("range must be ordered and no larger than %d blocks", h.maxLogBlockRange))
+		writeError(c, http.StatusBadRequest, "invalid_block_range", fmt.Sprintf("range must be ordered and no larger than %d blocks", h.maxLogBlockRange))
 		return
 	}
 
@@ -211,19 +229,19 @@ func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {
 		ToBlock:   new(big.Int).SetUint64(to),
 		Addresses: []common.Address{common.HexToAddress(rawAddress)},
 	}
-	if rawTopic := query.Get("topic0"); rawTopic != "" {
+	if rawTopic := c.Query("topic0"); rawTopic != "" {
 		if !isHash(rawTopic) {
-			writeError(w, http.StatusBadRequest, "invalid_topic", "topic0 must be a 32-byte 0x-prefixed hex value")
+			writeError(c, http.StatusBadRequest, "invalid_topic", "topic0 must be a 32-byte 0x-prefixed hex value")
 			return
 		}
 		filter.Topics = [][]common.Hash{{common.HexToHash(rawTopic)}}
 	}
 
-	ctx, cancel := h.rpcContext(r.Context())
+	ctx, cancel := h.rpcContext(c.Request.Context())
 	defer cancel()
 	entries, err := h.client.FilterLogs(ctx, filter)
 	if err != nil {
-		h.rpcError(w, err)
+		h.rpcError(c, err)
 		return
 	}
 	items := make([]map[string]any, 0, len(entries))
@@ -244,27 +262,33 @@ func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {
 			"removed":          entry.Removed,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"count": len(items), "items": items})
+	writeJSON(c, http.StatusOK, map[string]any{"count": len(items), "items": items})
 }
 
 func (h *Handler) rpcContext(parent context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(parent, h.requestTimeout)
 }
 
-func (h *Handler) rpcError(w http.ResponseWriter, err error) {
+func (h *Handler) rpcError(c *gin.Context, err error) {
 	if errors.Is(err, ethereum.NotFound) {
-		writeError(w, http.StatusNotFound, "not_found", "chain data was not found")
+		writeError(c, http.StatusNotFound, "not_found", "chain data was not found")
 		return
 	}
-	writeError(w, http.StatusBadGateway, "rpc_error", err.Error())
+	writeError(c, http.StatusBadGateway, "rpc_error", err.Error())
 }
 
-func (h *Handler) logging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) logging() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		started := time.Now()
-		next.ServeHTTP(w, r)
-		h.logger.Info("http request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(started))
-	})
+		c.Next()
+		h.logger.Info("http request",
+			"method", c.Request.Method,
+			"path", c.Request.URL.Path,
+			"status", c.Writer.Status(),
+			"bytes", c.Writer.Size(),
+			"duration", time.Since(started),
+		)
+	}
 }
 
 func blockResponse(block *types.Block) map[string]any {
@@ -376,14 +400,12 @@ func nullableAddressFromPointer(address *common.Address) any {
 	return address.Hex()
 }
 
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+func writeJSON(c *gin.Context, status int, value any) {
+	c.JSON(status, value)
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
+func writeError(c *gin.Context, status int, code, message string) {
+	writeJSON(c, status, map[string]any{
 		"error": map[string]string{"code": code, "message": message},
 	})
 }
